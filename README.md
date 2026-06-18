@@ -3,7 +3,6 @@
 SmartFlood ID merupakan sistem pendukung keputusan berbasis **Big Data dan Machine Learning** yang dirancang untuk melakukan prediksi risiko banjir serta memberikan peringatan dini pada wilayah **15 kecamatan di Kota Surabaya**.
 
 Sistem ini mengintegrasikan model **Machine Learning**, arsitektur **data streaming real-time**, dan dashboard interaktif untuk memproses data cuaca serta kondisi hidrologi secara langsung guna membantu analisis potensi banjir.
-
 ---
 
 ## 👥 Anggota Tim
