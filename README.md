@@ -1,4 +1,4 @@
-# SmartFlood ID — Surabaya Flood Prediction & Early Warning System
+# SmartFlood ID (Surabaya Flood Prediction & Early Warning System)
 
 SmartFlood ID merupakan sistem pendukung keputusan berbasis **Big Data dan Machine Learning** yang dirancang untuk melakukan prediksi risiko banjir serta memberikan peringatan dini pada wilayah **15 kecamatan di Kota Surabaya**.
 
@@ -137,14 +137,11 @@ Dashboard menyediakan mode simulasi interaktif untuk menguji respons sistem terh
 SmartFlood-ID/
 │
 ├── app.py                  # Streamlit Dashboard
-│
 ├── producer_cuaca.py       # Kafka Producer data cuaca
-│
 ├── producer_laporan.py     # Kafka Producer simulasi laporan warga
-│
 ├── model/
-│   └── random_forest.pkl   # Model Machine Learning
-│
+│   └── smartflood_rf_model.pkl   # model utama
+│   └── smartflood_encoder.pkl # encoder
 ├── requirements.txt        # Python dependencies
 │
 └── README.md
