@@ -183,10 +183,29 @@ for _, kec in HIDROLOGI.iterrows():
     prob = rf.predict_proba(df_feat)[0][1] * 100
     
     status = '🔴 KRITIS' if prob > 70 else '🟡 WASPADA' if prob > 40 else '🟢 AMAN'
-    
+
+    # --- Komponen tambahan untuk Flood Risk Score komposit ---
+    pct_luas = float(np.clip((luas_td / kec['luas_km2']) * 100, 0, 100))          # % wilayah kecamatan yang tergenang
+    pct_penduduk = float(np.clip((ptd / kec['penduduk']) * 100, 0, 100))          # % populasi kecamatan yang terdampak
+    norm_genangan = float(np.clip((tinggi_gen / 3) * 100, 0, 100))                # tinggi genangan dinormalisasi ke skala 0-100 (cap 3m)
+    norm_lead = float(np.clip(((12 - lead) / 11) * 100, 0, 100))                  # makin pendek lead time -> makin urgent
+
+    # Bobot bersifat asumsi awal (belum dikalibrasi/divalidasi), perlu sensitivity test sebelum dipakai operasional
+    risk_score = round(
+        0.35 * prob +
+        0.20 * norm_genangan +
+        0.15 * pct_luas +
+        0.20 * pct_penduduk +
+        0.10 * norm_lead,
+        1
+    )
+    prioritas = '🔴 PRIORITAS UTAMA' if risk_score > 70 else '🟡 PRIORITAS SEDANG' if risk_score > 40 else '🟢 PRIORITAS RENDAH'
+
     results.append({
         'Kecamatan': kec['kecamatan'], 'Status': status, 'Probabilitas (%)': prob,
-        'Tinggi Genangan (m)': tinggi_gen, 'Penduduk Terdampak': ptd, 'Lead Time (jam)': lead
+        'Tinggi Genangan (m)': tinggi_gen, 'Luas Terdampak (km2)': luas_td,
+        '% Luas Terdampak': round(pct_luas, 1), 'Penduduk Terdampak': ptd,
+        'Lead Time (jam)': lead, 'Flood Risk Score': risk_score, 'Prioritas Evakuasi': prioritas
     })
 
 df_pred = pd.DataFrame(results).sort_values('Probabilitas (%)', ascending=False)
@@ -260,6 +279,62 @@ with tab1:
     st.pyplot(fig)
     plt.close()
 
+    st.markdown("---")
+    st.markdown("#### 🎯 Flood Risk Score, Luas Terdampak, & Prioritas Evakuasi")
+    st.caption("Flood Risk Score = skor komposit (probabilitas, tinggi genangan, % luas terdampak, % populasi terdampak, urgensi lead time). Bobot saat ini bersifat asumsi awal dan belum dikalibrasi terhadap data historis — perlu sensitivity analysis sebelum dipakai untuk keputusan operasional.")
+
+    fig2, axes2 = plt.subplots(1, 3, figsize=(20, 6))
+
+    # 5. Luas Wilayah Terdampak (% dari luas kecamatan)
+    lt_area_sorted = df_pred.sort_values('% Luas Terdampak')
+    ac = [PALETTE["danger"] if a > 50 else PALETTE["warn"] if a > 25 else PALETTE["safe"] for a in lt_area_sorted['% Luas Terdampak']]
+    axes2[0].barh(lt_area_sorted['Kecamatan'], lt_area_sorted['% Luas Terdampak'], color=ac)
+    axes2[0].axvline(50, color=PALETTE["danger"], linestyle='--', alpha=0.8)
+    axes2[0].axvline(25, color=PALETTE["warn"], linestyle='--', alpha=0.8)
+    axes2[0].set_title('% Luas Wilayah Terdampak')
+    axes2[0].set_xlim(0, 105)
+    style_axes(axes2[0])
+
+    # 6. Flood Risk Score komposit
+    rs_sorted = df_pred.sort_values('Flood Risk Score')
+    rc = [PALETTE["danger"] if r > 70 else PALETTE["warn"] if r > 40 else PALETTE["safe"] for r in rs_sorted['Flood Risk Score']]
+    axes2[1].barh(rs_sorted['Kecamatan'], rs_sorted['Flood Risk Score'], color=rc)
+    axes2[1].axvline(70, color=PALETTE["danger"], linestyle='--', alpha=0.8, label='Prioritas Utama (>70)')
+    axes2[1].axvline(40, color=PALETTE["warn"], linestyle='--', alpha=0.8, label='Prioritas Sedang (>40)')
+    axes2[1].set_title('Flood Risk Score (Komposit)')
+    axes2[1].set_xlim(0, 105)
+    axes2[1].legend(frameon=False, fontsize=8)
+    style_axes(axes2[1])
+
+    # 7. Top 5 Prioritas Evakuasi/Penanganan
+    top5 = df_pred.sort_values('Flood Risk Score', ascending=False).head(5).sort_values('Flood Risk Score')
+    axes2[2].barh(top5['Kecamatan'], top5['Flood Risk Score'], color=PALETTE["danger"])
+    for i, (_, row) in enumerate(top5.iterrows()):
+        axes2[2].text(
+            row['Flood Risk Score'] + 2, i,
+            f"{row['Penduduk Terdampak']:,} jiwa | {row['% Luas Terdampak']:.0f}% wilayah | {row['Lead Time (jam)']} jam",
+            va='center', fontsize=8, color=PALETTE["text"]
+        )
+    axes2[2].set_title('Top 5 Prioritas Evakuasi/Penanganan')
+    axes2[2].set_xlim(0, 140)
+    style_axes(axes2[2])
+
+    plt.tight_layout()
+    st.pyplot(fig2)
+    plt.close()
+
+    st.markdown("#### 🚨 Rekomendasi Wilayah Prioritas")
+    top3 = df_pred.sort_values('Flood Risk Score', ascending=False).head(3)
+    rec_lines = []
+    for rank, (_, row) in enumerate(top3.iterrows(), start=1):
+        rec_lines.append(
+            f"**{rank}. {row['Kecamatan']}** — Flood Risk Score `{row['Flood Risk Score']:.1f}` ({row['Prioritas Evakuasi']})  \n"
+            f"Genangan estimasi **{row['Tinggi Genangan (m)']:.2f} m**, **{row['% Luas Terdampak']:.0f}%** luas wilayah terendam, "
+            f"**{row['Penduduk Terdampak']:,} jiwa** terdampak, lead time peringatan **{row['Lead Time (jam)']} jam**."
+        )
+    st.markdown("\n\n".join(rec_lines))
+    st.caption("Rekomendasi berbasis ranking Flood Risk Score saat ini, bukan rencana evakuasi resmi. Validasi lapangan oleh BPBD tetap diperlukan sebelum eksekusi.")
+
 with tab2:
     st.markdown("### 📡 Ingestion Layer: Data dari Apache Kafka")
     st.caption("Monitoring aliran data real-time yang masuk ke dalam antrean (broker) Kafka.")
@@ -280,7 +355,10 @@ with tab3:
         column_config={
             "Probabilitas (%)": st.column_config.NumberColumn("Probabilitas (%)", format="%.2f %%"),
             "Tinggi Genangan (m)": st.column_config.NumberColumn("Tinggi Genangan (m)", format="%.2f m"),
-            "Penduduk Terdampak": st.column_config.NumberColumn("Penduduk Terdampak", format="%d jiwa")
+            "Luas Terdampak (km2)": st.column_config.NumberColumn("Luas Terdampak (km²)", format="%.2f km²"),
+            "% Luas Terdampak": st.column_config.NumberColumn("% Luas Terdampak", format="%.1f %%"),
+            "Penduduk Terdampak": st.column_config.NumberColumn("Penduduk Terdampak", format="%d jiwa"),
+            "Flood Risk Score": st.column_config.NumberColumn("Flood Risk Score", format="%.1f")
         }
     )
 
